@@ -12,6 +12,7 @@ import (
 
 func (api *API) RegisterUserMethods(r chi.Router) {
 	r.Get("/users", api.getUsers)
+	r.Get("/users/{id}", api.getUser)
 	r.Post("/users", api.createUser)
 }
 
@@ -36,11 +37,14 @@ func (api *API) getUsers(w http.ResponseWriter, r *http.Request) {
 			&user.UpdatedAt,
 		)
 		if err != nil {
-			panic(err)
+			http.Error(w, "user not found", http.StatusNotFound)
+			return
 		}
 		users = append(users, user)
 
 	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(users)
 
 }
@@ -82,5 +86,33 @@ func (api *API) createUser(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	w.Write([]byte(`{"status":"ok"}`))
+}
 
+func (api *API) getUser(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		http.Error(w, "missing id", http.StatusBadRequest)
+		return
+	}
+	user := models.UserResponse{}
+	err := api.Pool.QueryRow(
+		api.Ctx,
+		"select id, family, name, surname, is_admin, created_at, updated_at from users where id = $1",
+		id,
+	).Scan(
+		&user.Id,
+		&user.Family,
+		&user.Name,
+		&user.Surname,
+		&user.IsAdmin,
+		&user.CreatedAt,
+		&user.UpdatedAt,
+	)
+	if err != nil {
+		http.Error(w, "user not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(user)
 }
