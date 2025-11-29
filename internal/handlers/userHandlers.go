@@ -18,7 +18,7 @@ func (api *API) RegisterUserMethods(r chi.Router) {
 
 func (api *API) getUsers(w http.ResponseWriter, r *http.Request) {
 	rows, err := api.Pool.Query(
-		api.Ctx,
+		r.Context(),
 		"select id, family, name, surname, is_admin, created_at, updated_at from users",
 	)
 	if err != nil {
@@ -52,35 +52,37 @@ func (api *API) getUsers(w http.ResponseWriter, r *http.Request) {
 func (api *API) createUser(w http.ResponseWriter, r *http.Request) {
 	bytes, err := io.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		utils.WriteJSONError(w, http.StatusBadRequest, "invalid_request", "failed to read body")
 		return
 	}
 
 	var user models.UserRequest
 	err = json.Unmarshal(bytes, &user)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		utils.WriteJSONError(w, http.StatusBadRequest, "invalid_json", "request body is not valid JSON")
 		return
 	}
 
 	hash, err := utils.HashPassword(user.Password)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		utils.WriteJSONError(w, http.StatusBadRequest, "invalid_request", "failed to read body")
 		return
 	}
-	token, err := utils.GenerateSessionToken()
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-
+	/*
+		token, err := utils.GenerateSessionToken()
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+	*/
 	_, err = api.Pool.Exec(
-		api.Ctx,
-		"insert into users (family, name, surname, password_hash, is_admin, session_token) values ($1, $2, $3, $4, $5, $6)",
-		user.Family, user.Name, user.Surname, hash, false, token,
+		r.Context(),
+		"insert into users (login, family, name, surname, password_hash, is_admin) values ($1, $2, $3, $4, $5, $6)",
+		user.Login, user.Family, user.Name, user.Surname, hash, false,
 	)
+
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		utils.WriteJSONError(w, http.StatusConflict, "user_is_exist", "user with this login is already exist")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -91,12 +93,12 @@ func (api *API) createUser(w http.ResponseWriter, r *http.Request) {
 func (api *API) getUser(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if id == "" {
-		http.Error(w, "missing id", http.StatusBadRequest)
+		utils.WriteJSONError(w, http.StatusNotFound, "not_found", "user with id does not exist")
 		return
 	}
 	user := models.UserResponse{}
 	err := api.Pool.QueryRow(
-		api.Ctx,
+		r.Context(),
 		"select id, family, name, surname, is_admin, created_at, updated_at from users where id = $1",
 		id,
 	).Scan(
@@ -113,6 +115,6 @@ func (api *API) getUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
+	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(user)
 }

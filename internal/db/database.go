@@ -8,9 +8,14 @@ import (
 )
 
 func InitDatabase(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, error) {
-	conn, err := pgxpool.New(ctx, cfg.DBUrl)
+	pool, err := pgxpool.New(ctx, cfg.DBUrl)
 	if err != nil {
 		return nil, err
 	}
-	return conn, nil
+
+	err = pool.Ping(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return pool, nil
 }

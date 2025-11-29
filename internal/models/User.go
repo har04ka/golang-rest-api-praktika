@@ -4,6 +4,7 @@ import "time"
 
 type User struct {
 	Id           int64
+	Login        string
 	Family       string
 	Name         string
 	Surname      string
@@ -25,6 +26,7 @@ type UserResponse struct {
 }
 
 type UserRequest struct {
+	Login    string `json:"login"`
 	Family   string `json:"family"`
 	Name     string `json:"name"`
 	Surname  string `json:"surname"`

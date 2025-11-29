@@ -11,3 +11,7 @@ func HashPassword(password string) (hash string, err error) {
 	}
 	return string(bytes), nil
 }
+
+func HashSHA256() {
+
+}

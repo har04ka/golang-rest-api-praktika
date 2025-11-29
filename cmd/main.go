@@ -24,7 +24,7 @@ func main() {
 	}
 	defer pool.Close()
 
-	api := handlers.NewAPI(ctx, pool)
+	api := handlers.NewAPI(pool)
 
 	api.RegisterAll(router)
 
