@@ -10,7 +10,7 @@ import (
 
 type contextKey string
 
-const userIDKey contextKey = "userID"
+const UserIDKey contextKey = "userID"
 
 func AuthCheck(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -21,7 +21,7 @@ func AuthCheck(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 				return
 			}
 
-			var user uint64
+			var user int64
 			token := cookie.Value
 
 			err = pool.QueryRow(
@@ -35,7 +35,7 @@ func AuthCheck(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 				return
 			}
 
-			ctx := context.WithValue(r.Context(), userIDKey, user)
+			ctx := context.WithValue(r.Context(), UserIDKey, user)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
