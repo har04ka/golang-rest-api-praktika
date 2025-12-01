@@ -23,6 +23,7 @@ func (api *API) RegisterAuth(r chi.Router) {
 		gr.Get("/auth/me", api.aboutMe)
 	})
 	r.Post("/auth/login", api.loginHandler)
+	r.Post("/auth/logout", api.logoutHandler)
 }
 
 func (api *API) loginHandler(w http.ResponseWriter, r *http.Request) {
@@ -124,4 +125,31 @@ func (api *API) aboutMe(w http.ResponseWriter, r *http.Request) {
 		utils.WriteJSONError(w, http.StatusInternalServerError, "encode_error", "failed to encode json")
 		return
 	}
+}
+
+func (api *API) logoutHandler(w http.ResponseWriter, r *http.Request) {
+	token, err := r.Cookie("session_token")
+	if err != nil {
+		utils.ClearSessionCookie(w)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ok"}`))
+		return
+	}
+
+	_, err = api.Pool.Exec(
+		r.Context(),
+		"delete from sessions where token_hash = $1",
+		utils.HashTokenHMAC(token.Value),
+	)
+	if err != nil {
+		utils.WriteJSONError(w, http.StatusInternalServerError, "session_save_failed", "failed to save session token")
+		return
+	}
+
+	utils.ClearSessionCookie(w)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status":"ok"}`))
 }

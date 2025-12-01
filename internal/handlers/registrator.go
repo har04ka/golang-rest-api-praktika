@@ -8,5 +8,5 @@ func (api *API) RegisterAll(c chi.Router) {
 	api.RegisterRoot(c)
 	api.RegisterUserMethods(c)
 	api.RegisterAuth(c)
-	api.registerTasks(c)
+	api.RegisterTasks(c)
 }

@@ -6,10 +6,16 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-func (api *API) registerTasks(r chi.Router) {
-	r.Get("/tasks", api.getTasks)
+func (api *API) RegisterTasks(r chi.Router) {
+	r.Group(func(gr chi.Router) {
+
+	})
 }
 
 func (api *API) getTasks(w http.ResponseWriter, r *http.Request) {
+
+}
+
+func (api *API) createTaskHandler(w http.ResponseWriter, r http.Request) {
 
 }
