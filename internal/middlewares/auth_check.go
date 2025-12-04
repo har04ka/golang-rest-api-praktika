@@ -3,6 +3,7 @@ package middlewares
 import (
 	"context"
 	"net/http"
+	"strings"
 	"rest-api/utils"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -15,16 +16,27 @@ const UserIDKey contextKey = "userID"
 func AuthCheck(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			cookie, err := r.Cookie("session_token")
-			if err != nil {
+			var token string
+
+			authHeader := r.Header.Get("Authorization")
+			if authHeader != "" && strings.HasPrefix(authHeader, "Bearer ") {
+				token = strings.TrimPrefix(authHeader, "Bearer ")
+			} else {
+				cookie, err := r.Cookie("session_token")
+				if err != nil {
+					next.ServeHTTP(w, r)
+					return
+				}
+				token = cookie.Value
+			}
+
+			if token == "" {
 				next.ServeHTTP(w, r)
 				return
 			}
 
 			var user int64
-			token := cookie.Value
-
-			err = pool.QueryRow(
+			err := pool.QueryRow(
 				r.Context(),
 				"select user_id from sessions where token_hash = $1",
 				utils.HashTokenHMAC(token),
