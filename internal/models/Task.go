@@ -13,7 +13,7 @@ type Task struct {
 }
 
 type TaskRequest struct {
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	UserIDs     []int  `json:"user_ids"`
+	Title        string `json:"title"`
+	Description  string `json:"description"`
+	Is_completed bool   `json:"is_completed"`
 }
