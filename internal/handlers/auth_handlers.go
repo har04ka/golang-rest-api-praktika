@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"rest-api/internal/middlewares"
 	"rest-api/internal/models"
 	"rest-api/utils"
@@ -40,18 +41,37 @@ func (api *API) loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	err = utils.ValidateLoginRequest(user.Login, user.Password)
+	if err != nil {
+		valErr, ok := err.(*utils.ValidationError)
+		if ok {
+			utils.WriteJSONValidationError(w, valErr.Field, valErr.Message)
+		} else {
+			utils.WriteJSONError(w, http.StatusBadRequest, "validation_error", err.Error())
+		}
+		return
+	}
+
 	var (
 		passwordHash string
-		id           uint
+		id           int64
+		isAdmin      bool
+		family       string
+		name         string
+		surname      string
 	)
 	row := api.Pool.QueryRow(
 		r.Context(),
-		"select id, password_hash from users where login = $1",
+		"select id, password_hash, is_admin, family, name, surname from users where login = $1",
 		user.Login,
 	)
 	err = row.Scan(
 		&id,
 		&passwordHash,
+		&isAdmin,
+		&family,
+		&name,
+		&surname,
 	)
 	if err != nil {
 		utils.WriteJSONError(w, http.StatusUnauthorized, "invalid_credentials", "user does not exist or password is incorrect")
@@ -76,8 +96,6 @@ func (api *API) loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-
 	cookie := &http.Cookie{
 		Name:     "session_token",
 		Value:    token,
@@ -88,25 +106,37 @@ func (api *API) loginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.SetCookie(w, cookie)
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"status":"ok"}`))
+
+	loginResponse := models.LoginResponse{
+		Status: "ok",
+		Token:  token,
+		User: models.UserProfileResponse{
+			Id:      int(id),
+			Family:  family,
+			Name:    name,
+			Surname: surname,
+			IsAdmin: isAdmin,
+		},
+	}
+
+	utils.WriteJSON(w, http.StatusOK, loginResponse)
 }
 
 func (api *API) aboutMe(w http.ResponseWriter, r *http.Request) {
 	userID, ok := r.Context().Value(middlewares.UserIDKey).(int64)
 
 	if !ok {
-		w.Header().Set("Content-Type", "application/json")
 		utils.WriteJSONError(w, http.StatusUnauthorized, "not_authorized", "trying to get about info without auth")
 		return
 	}
 
-	var user models.UserResponse
+	var user models.UserProfileResponse
 	err := api.Pool.QueryRow(
 		r.Context(),
-		"select family, name, surname, is_admin from users where id = $1",
+		"select id, family, name, surname, is_admin from users where id = $1",
 		userID,
 	).Scan(
+		&user.Id,
 		&user.Family,
 		&user.Name,
 		&user.Surname,
@@ -117,39 +147,41 @@ func (api *API) aboutMe(w http.ResponseWriter, r *http.Request) {
 		utils.WriteJSONError(w, http.StatusInternalServerError, "db_error", "failed to fetch user info")
 		return
 	}
-	jsonWriter := json.NewEncoder(w)
-
-	w.Header().Set("Content-Type", "application/json")
-	err = jsonWriter.Encode(user)
-	if err != nil {
-		utils.WriteJSONError(w, http.StatusInternalServerError, "encode_error", "failed to encode json")
-		return
-	}
+	utils.WriteJSON(w, http.StatusOK, user)
 }
 
 func (api *API) logoutHandler(w http.ResponseWriter, r *http.Request) {
-	token, err := r.Cookie("session_token")
-	if err != nil {
+	var tokenValue string
+
+	authHeader := r.Header.Get("Authorization")
+	if authHeader != "" && strings.HasPrefix(authHeader, "Bearer ") {
+		tokenValue = strings.TrimPrefix(authHeader, "Bearer ")
+	} else {
+		cookie, err := r.Cookie("session_token")
+		if err != nil {
+			utils.ClearSessionCookie(w)
+			utils.WriteJSONSuccess(w, http.StatusOK)
+			return
+		}
+		tokenValue = cookie.Value
+	}
+
+	if tokenValue == "" {
 		utils.ClearSessionCookie(w)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status":"ok"}`))
+		utils.WriteJSONSuccess(w, http.StatusOK)
 		return
 	}
 
-	_, err = api.Pool.Exec(
+	_, err := api.Pool.Exec(
 		r.Context(),
 		"delete from sessions where token_hash = $1",
-		utils.HashTokenHMAC(token.Value),
+		utils.HashTokenHMAC(tokenValue),
 	)
 	if err != nil {
-		utils.WriteJSONError(w, http.StatusInternalServerError, "session_save_failed", "failed to save session token")
+		utils.WriteJSONError(w, http.StatusInternalServerError, "session_delete_failed", "failed to delete session")
 		return
 	}
 
 	utils.ClearSessionCookie(w)
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"status":"ok"}`))
+	utils.WriteJSONSuccess(w, http.StatusOK)
 }
