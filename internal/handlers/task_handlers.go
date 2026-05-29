@@ -25,6 +25,9 @@ func (api *API) RegisterTasks(r chi.Router) {
 			admin.Use(middlewares.UserStatusCheck(api.Pool))
 			admin.Post("/tasks", api.createTaskHandler)
 			admin.Post("/tasks/{id}/users", api.bindUserHandler)
+			admin.Get("/tasks/{id}", api.getTaskHandler)
+			admin.Patch("/tasks/{id}", api.updateTaskHandler)
+			admin.Delete("/tasks/{id}", api.deleteTaskHandler)
 		})
 	})
 }
@@ -256,11 +259,152 @@ func (api *API) completeTaskHandler(w http.ResponseWriter, r *http.Request) {
 
 	_, err = api.Pool.Exec(
 		r.Context(),
-		"update tasks set is_completed = true where id = $1",
+		"update tasks set is_completed = NOT is_completed where id = $1",
 		taskID,
 	)
 	if err != nil {
 		utils.WriteJSONError(w, http.StatusInternalServerError, "db_error", "failed to complete task")
+		return
+	}
+
+	utils.WriteJSONSuccess(w, http.StatusOK)
+}
+
+func (api *API) getTaskHandler(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value(middlewares.UserIDKey).(int64)
+	if !ok || userID == 0 {
+		utils.WriteJSONError(w, http.StatusUnauthorized, "not_authorized", "you are not authorized")
+		return
+	}
+
+	idStr := chi.URLParam(r, "id")
+	taskID, err := strconv.Atoi(idStr)
+	if err != nil || taskID <= 0 {
+		utils.WriteJSONError(w, http.StatusBadRequest, "invalid_task_id", "task id must be a positive integer")
+		return
+	}
+
+	isAdmin, _ := r.Context().Value(middlewares.IsAdminKey).(bool)
+
+	var task models.Task
+	if isAdmin {
+		err = api.Pool.QueryRow(
+			r.Context(),
+			"select id, title, description, created_at, is_completed from tasks where id = $1",
+			taskID,
+		).Scan(&task.Id, &task.Title, &task.Description, &task.CreatedAt, &task.IsCompleted)
+	} else {
+		err = api.Pool.QueryRow(
+			r.Context(),
+			`select t.id, t.title, t.description, t.created_at, t.is_completed
+			 from tasks t
+			 join task_users tu on tu.task_id = t.id
+			 where t.id = $1 and tu.user_id = $2`,
+			taskID, userID,
+		).Scan(&task.Id, &task.Title, &task.Description, &task.CreatedAt, &task.IsCompleted)
+	}
+
+	if err != nil {
+		utils.WriteJSONError(w, http.StatusNotFound, "not_found", "task with this id does not exist or access denied")
+		return
+	}
+
+	// load assigned users
+	rowsUsers, err := api.Pool.Query(
+		r.Context(),
+		`select u.id, u.family, u.name, u.surname
+		 from users u
+		 join task_users tu on tu.user_id = u.id
+		 where tu.task_id = $1`,
+		taskID,
+	)
+	if err != nil {
+		utils.WriteJSONError(w, http.StatusInternalServerError, "db_error", "failed to fetch assigned users")
+		return
+	}
+	defer rowsUsers.Close()
+
+	assigned := []models.UserPublicResponse{}
+	for rowsUsers.Next() {
+		var u models.UserPublicResponse
+		if err := rowsUsers.Scan(&u.Id, &u.Family, &u.Name, &u.Surname); err != nil {
+			utils.WriteJSONError(w, http.StatusInternalServerError, "db_error", "failed to scan assigned user")
+			return
+		}
+		assigned = append(assigned, u)
+	}
+
+	resp := struct {
+		Task          models.Task                 `json:"task"`
+		AssignedUsers []models.UserPublicResponse `json:"assigned_users"`
+	}{
+		Task:          task,
+		AssignedUsers: assigned,
+	}
+
+	utils.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (api *API) updateTaskHandler(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	taskID, err := strconv.Atoi(idStr)
+	if err != nil || taskID <= 0 {
+		utils.WriteJSONError(w, http.StatusBadRequest, "invalid_task_id", "task id must be a positive integer")
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		utils.WriteJSONError(w, http.StatusBadRequest, "invalid_request", "failed to read body")
+		return
+	}
+
+	var tr models.TaskRequest
+	err = json.Unmarshal(body, &tr)
+	if err != nil {
+		utils.WriteJSONError(w, http.StatusBadRequest, "invalid_json", "request body is not valid JSON")
+		return
+	}
+
+	err = utils.ValidateTaskRequest(tr.Title, tr.Description)
+	if err != nil {
+		valErr, ok := err.(*utils.ValidationError)
+		if ok {
+			utils.WriteJSONValidationError(w, valErr.Field, valErr.Message)
+		} else {
+			utils.WriteJSONError(w, http.StatusBadRequest, "validation_error", err.Error())
+		}
+		return
+	}
+
+	_, err = api.Pool.Exec(
+		r.Context(),
+		"update tasks set title = $1, description = $2, is_completed = $3 where id = $4",
+		tr.Title, tr.Description, tr.Is_completed, taskID,
+	)
+	if err != nil {
+		utils.WriteJSONError(w, http.StatusInternalServerError, "db_error", "failed to update task")
+		return
+	}
+
+	utils.WriteJSONSuccess(w, http.StatusOK)
+}
+
+func (api *API) deleteTaskHandler(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	taskID, err := strconv.Atoi(idStr)
+	if err != nil || taskID <= 0 {
+		utils.WriteJSONError(w, http.StatusBadRequest, "invalid_task_id", "task id must be a positive integer")
+		return
+	}
+
+	_, err = api.Pool.Exec(
+		r.Context(),
+		"delete from tasks where id = $1",
+		taskID,
+	)
+	if err != nil {
+		utils.WriteJSONError(w, http.StatusInternalServerError, "db_error", "failed to delete task")
 		return
 	}
 

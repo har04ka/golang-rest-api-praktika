@@ -1,4 +1,7 @@
 .idea/
 .vscode/
-
 .env
+secretKey.txt
+*.exe
+*.exe~
+/bin/

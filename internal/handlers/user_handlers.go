@@ -17,9 +17,37 @@ func (api *API) RegisterUserMethods(r chi.Router) {
 		gr.Use(middlewares.AuthCheck(api.Pool))
 		gr.Use(middlewares.AddUserStatus(api.Pool))
 		gr.Get("/users", api.getUsers)
+		gr.Get("/users/me/completed", api.getMyCompletedCount)
 		gr.Get("/users/{id}", api.getUser)
 	})
-	r.Post("/users", api.createUser)
+	r.Group(func(admin chi.Router) {
+		// require authentication first so UserStatusCheck can read UserIDKey from context
+		admin.Use(middlewares.AuthCheck(api.Pool))
+		admin.Use(middlewares.AddUserStatus(api.Pool))
+		admin.Use(middlewares.UserStatusCheck(api.Pool))
+		admin.Post("/users", api.createUser)
+	})
+}
+
+func (api *API) getMyCompletedCount(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value(middlewares.UserIDKey).(int64)
+	if !ok || userID == 0 {
+		utils.WriteJSONError(w, http.StatusUnauthorized, "not_authorized", "you are not authorized")
+		return
+	}
+
+	var count int64
+	err := api.Pool.QueryRow(
+		r.Context(),
+		`select count(*) from tasks t join task_users tu on tu.task_id = t.id where tu.user_id = $1 and t.is_completed = true`,
+		userID,
+	).Scan(&count)
+	if err != nil {
+		utils.WriteJSONError(w, http.StatusInternalServerError, "db_error", "failed to fetch completed count")
+		return
+	}
+
+	utils.WriteJSON(w, http.StatusOK, map[string]int64{"completed_tasks": count})
 }
 
 func (api *API) getUsers(w http.ResponseWriter, r *http.Request) {
