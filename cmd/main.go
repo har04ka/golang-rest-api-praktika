@@ -14,9 +14,14 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/joho/godotenv"
 )
 
 func main() {
+	if err := godotenv.Load(); err != nil {
+		log.Println("no .env file found, relying on system env")
+	}
+
 	cfg := config.Load()
 	ctx := context.Background()
 

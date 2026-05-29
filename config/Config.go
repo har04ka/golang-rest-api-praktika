@@ -1,5 +1,7 @@
 package config
 
+import "os"
+
 type Config struct {
 	Port  string
 	DBUrl string
@@ -7,7 +9,14 @@ type Config struct {
 
 func Load() *Config {
 	return &Config{
-		Port:  ":8080",
-		DBUrl: "postgresql://postgres:123@localhost:5432/postgres",
+		Port:  getEnv("PORT", ":8080"),
+		DBUrl: getEnv("DB_URL", ""),
 	}
+}
+
+func getEnv(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
 }

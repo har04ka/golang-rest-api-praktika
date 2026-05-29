@@ -21,7 +21,7 @@ func (api *API) RegisterUserMethods(r chi.Router) {
 		gr.Get("/users/{id}", api.getUser)
 	})
 	r.Group(func(admin chi.Router) {
-		// require authentication first so UserStatusCheck can read UserIDKey from context
+		
 		admin.Use(middlewares.AuthCheck(api.Pool))
 		admin.Use(middlewares.AddUserStatus(api.Pool))
 		admin.Use(middlewares.UserStatusCheck(api.Pool))
