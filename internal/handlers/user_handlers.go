@@ -1,9 +1,13 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
+	"log"
 	"net/http"
+	"rest-api/config"
 	"rest-api/internal/middlewares"
 	"rest-api/internal/models"
 	"rest-api/utils"
@@ -21,7 +25,7 @@ func (api *API) RegisterUserMethods(r chi.Router) {
 		gr.Get("/users/{id}", api.getUser)
 	})
 	r.Group(func(admin chi.Router) {
-		
+
 		admin.Use(middlewares.AuthCheck(api.Pool))
 		admin.Use(middlewares.AddUserStatus(api.Pool))
 		admin.Use(middlewares.UserStatusCheck(api.Pool))
@@ -153,4 +157,39 @@ func (api *API) getUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	utils.WriteJSON(w, http.StatusOK, user)
+}
+
+func (api *API) SeedAdmin(cfg *config.Config) error {
+	ctx := context.Background()
+	if cfg.AdminLogin == "" || cfg.AdminPassword == "" {
+		return errors.New("ADMIN_LOGIN or ADMIN_PASSWORD is not set in .env")
+	}
+
+	checkQuery := `
+	SELECT EXISTS(SELECT 1 FROM users WHERE is_admin = true)
+	`
+	var exists bool
+	err := api.Pool.QueryRow(ctx, checkQuery).Scan(&exists)
+	if err != nil {
+		return err
+	}
+	if exists {
+		log.Println("seed: admin already exists, skipping")
+		return nil
+	}
+	insertQuery := `
+		INSERT INTO users(login, family, name, surname, password_hash, is_admin) values ($1, $2, $3, $4, $5, $6)
+	`
+	hash, err := utils.HashPassword(cfg.AdminPassword)
+	if err != nil {
+		return err
+	}
+	_, err = api.Pool.Exec(ctx, insertQuery, cfg.AdminLogin, "admin", "admin", "admin", hash, true)
+	if err != nil {
+		return err
+	}
+
+	log.Println("seed: success (check .env to get login and pass)")
+
+	return nil
 }

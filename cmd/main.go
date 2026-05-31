@@ -34,6 +34,11 @@ func main() {
 	defer pool.Close()
 
 	api := handlers.NewAPI(pool)
+
+	if err := api.SeedAdmin(cfg); err != nil {
+		log.Fatalf("seed admin: %v\n", err)
+	}
+
 	api.RegisterAll(router)
 
 	srv := &http.Server{
